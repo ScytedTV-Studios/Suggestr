@@ -1,53 +1,49 @@
-const { Client, GatewayIntentBits, Events, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Client, GatewayIntentBits, Events, REST, Routes, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionsBitField } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-require('dotenv').config(); // Load environment variables from .env file
+require('dotenv').config();
 
-// Create a new client instance
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildMembers,
         GatewayIntentBits.MessageContent,
     ],
 });
 
-// Directory for storing suggestions
 const SUGGESTIONS_DIR = './suggestions';
 
 if (!fs.existsSync(SUGGESTIONS_DIR)) {
     fs.mkdirSync(SUGGESTIONS_DIR);
 }
 
-// Load existing suggestions
 const loadSuggestions = (guildId) => {
     const filePath = path.join(SUGGESTIONS_DIR, `${guildId}.json`);
     if (fs.existsSync(filePath)) {
         return JSON.parse(fs.readFileSync(filePath));
     }
-    // Initialize suggestionCount to 0 if the file does not exist
+
     return { channelId: null, suggestions: {}, suggestionCount: 0, stickyMessageId: null };
 };
 
-// Save suggestions
 const saveSuggestions = (guildId, suggestions) => {
     const filePath = path.join(SUGGESTIONS_DIR, `${guildId}.json`);
     fs.writeFileSync(filePath, JSON.stringify(suggestions, null, 2));
 };
 
-// Load commands
 const commands = [
     {
         name: 'config',
         description: 'Configure suggestion settings',
         options: [
             {
-                type: 1, // Subcommand type
+                type: 1,
                 name: 'channel',
                 description: 'Set the channel for suggestions',
                 options: [
                     {
-                        type: 7, // Channel type
+                        type: 7,
                         name: 'channel',
                         description: 'The channel to send suggestions to',
                         required: true,
@@ -55,9 +51,14 @@ const commands = [
                 ],
             },
             {
-                type: 1, // Subcommand type
+                type: 1,
                 name: 'disable',
                 description: 'Disable the suggestions channel',
+            },
+            {
+                type: 1,
+                name: 'data',
+                description: 'See how your data is used and stored',
             },
         ],
     },
@@ -66,7 +67,7 @@ const commands = [
         description: 'Submit a suggestion',
         options: [
             {
-                type: 3, // String type
+                type: 3,
                 name: 'suggestion',
                 description: 'Your suggestion',
                 required: true,
@@ -75,7 +76,6 @@ const commands = [
     },
 ];
 
-// Register commands with Discord globally
 const rest = new REST({ version: '9' }).setToken(process.env.BOT_TOKEN);
 
 (async () => {
@@ -89,10 +89,9 @@ const rest = new REST({ version: '9' }).setToken(process.env.BOT_TOKEN);
     }
 })();
 
-const lastStickyUpdate = new Map(); // Track last update time for each channel
-const updatingStickyMessage = new Map(); // Track if the sticky message is being updated
+const lastStickyUpdate = new Map();
+const updatingStickyMessage = new Map();
 
-// Create a sticky message in the channel
 const createStickyMessage = async (channel) => {
     const embed = new EmbedBuilder()
         .setDescription('-# To make a suggestion, use the </suggest:1300648773122261035> command.')
@@ -100,33 +99,32 @@ const createStickyMessage = async (channel) => {
 
     const message = await channel.send({ embeds: [embed] });
 
-    return message.id; // Return the sticky message ID
+    return message.id;
 };
 
-// Update the sticky message in the channel
 const updateStickyMessage = async (channel, previousStickyMessageId) => {
-    // Fetch the previous sticky message
+
     const previousStickyMessage = await channel.messages.fetch(previousStickyMessageId).catch(() => null);
-    
-    // Delete the previous sticky message if it exists
+
     if (previousStickyMessage) {
         await previousStickyMessage.delete();
     }
 
-    // Create a new sticky message
     const newStickyMessageId = await createStickyMessage(channel);
-    return newStickyMessageId; // Return the new sticky message ID
+    return newStickyMessageId;
 };
 
-// Handle interactions
 client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.isCommand()) {
         const { commandName } = interaction;
 
-        // Check for MANAGE_CHANNELS permission for config commands
         if (commandName === 'config') {
-            if (!interaction.member.permissions.has('MANAGE_CHANNELS')) {
-                return await interaction.reply('You do not have permission to use this command.', { ephemeral: true });
+            await interaction.deferReply();
+            if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageChannel)) {
+                const embed = new EmbedBuilder()
+                    .setColor('Red')
+                    .setDescription('<:crossmark:1330976664535961753> `You do not have permission to use this command.`');
+                return await interaction.editReply({ embeds: [embed], ephemeral: true });
             }
             const subCommand = interaction.options.getSubcommand();
             const guildId = interaction.guild.id;
@@ -136,160 +134,181 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 const suggestions = loadSuggestions(guildId);
                 suggestions.channelId = channel.id;
 
-                // Create a sticky message
                 suggestions.stickyMessageId = await createStickyMessage(channel);
 
                 saveSuggestions(guildId, suggestions);
-                await interaction.reply(`Suggestions will be sent to ${channel}.`);
+
+                const embed = new EmbedBuilder()
+                    .setColor('Green')
+                    .setDescription(`<:checkmark:1330976666016550932> \`Suggestions will be sent to #${channel.name}.\``);
+                await interaction.editReply({ embeds: [embed] });
+
             } else if (subCommand === 'disable') {
                 const suggestions = loadSuggestions(guildId);
                 delete suggestions.channelId;
-                delete suggestions.stickyMessageId; // Remove sticky message ID
+                delete suggestions.stickyMessageId;
                 saveSuggestions(guildId, suggestions);
-                await interaction.reply('Suggestions channel has been disabled.');
+
+                const embed = new EmbedBuilder()
+                    .setColor('Green')
+                    .setDescription(`<:checkmark:1330976666016550932> \`Suggestions channel has been disabled.\``);
+                await interaction.editReply({ embeds: [embed] });
+
             }
         } else if (commandName === 'suggest') {
+            await interaction.deferReply();
             const suggestionText = interaction.options.getString('suggestion');
             const suggestions = loadSuggestions(interaction.guild.id);
             const channelId = suggestions.channelId;
 
             if (!channelId) {
-                return interaction.reply('Please configure a suggestions channel first.');
+                const embed = new EmbedBuilder()
+                    .setColor('Red')
+                    .setDescription('<:crossmark:1330976664535961753> `Please configure a suggestions channel first.`');
+                return interaction.editReply({ embeds: [embed], ephemeral: true });
             }
 
             const channel = await client.channels.fetch(channelId);
-            if (!channel) return interaction.reply('Suggestion channel not found.');
+            const notFoundEmbed = new EmbedBuilder()
+                .setColor('Red')
+                .setDescription('<:crossmark:1330976664535961753> `Please configure a suggestions channel first.`');
+            if (!channel) return interaction.editReply({ embeds: [notFoundEmbed], ephemeral: true });
 
-            // Increment the suggestion count and assign a number
-            suggestions.suggestionCount += 1; // Increment suggestion count
-            const suggestionNumber = suggestions.suggestionCount; // Get new suggestion number
+            suggestions.suggestionCount += 1;
+            const suggestionNumber = suggestions.suggestionCount;
 
             const embed = new EmbedBuilder()
-                .setTitle(`Suggestion #${suggestionNumber}`) // Use the incremented number
+                .setTitle(`Suggestion #${suggestionNumber}`)
                 .setDescription(suggestionText)
                 .setColor('Blue')
                 .setFooter({ text: `Suggested by ${interaction.user.tag}`, iconURL: interaction.user.displayAvatarURL() });
 
-            const buttons = createVoteButtons(0, 0); // Initialize with 0 votes
+            const buttons = createVoteButtons(0, 0);
 
             const msg = await channel.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(buttons)] });
 
-            // Initialize the suggestion structure
             const suggestion = {
                 id: msg.id,
                 userId: interaction.user.id,
                 votes: { yes: 0, no: 0 },
                 voters: {},
-                number: suggestionNumber, // Store the suggestion number
+                number: suggestionNumber,
             };
 
-            // Ensure the suggestions object is initialized
             if (!suggestions.suggestions) {
                 suggestions.suggestions = {};
             }
 
-            suggestions.suggestions[suggestion.id] = suggestion; // Store suggestion under 'suggestions' key
-            saveSuggestions(interaction.guild.id, suggestions); // Save updated suggestions
+            suggestions.suggestions[suggestion.id] = suggestion;
+            saveSuggestions(interaction.guild.id, suggestions);
 
-            // Update the sticky message with the new sticky message ID if not recently updated
             const now = Date.now();
             const lastUpdate = lastStickyUpdate.get(channelId) || 0;
 
             if (suggestions.stickyMessageId && (now - lastUpdate) > 5000) {
                 suggestions.stickyMessageId = await updateStickyMessage(channel, suggestions.stickyMessageId);
-                lastStickyUpdate.set(channelId, now); // Update last sticky update time
+                lastStickyUpdate.set(channelId, now);
             }
 
-            saveSuggestions(interaction.guild.id, suggestions); // Save the updated sticky message ID
+            saveSuggestions(interaction.guild.id, suggestions);
 
-            // Send an ephemeral message confirming the submission
-            await interaction.reply({ content: 'Your suggestion has been submitted!', ephemeral: true });
+            const submittedEmbed = new EmbedBuilder()
+                .setColor('Green')
+                .setDescription(`<:checkmark:1330976666016550932> \`Your suggestion has been submitted.\``);
+            await interaction.editReply({ embeds: [submittedEmbed], ephemeral: true });
+
         }
     } else if (interaction.isButton()) {
         const suggestions = loadSuggestions(interaction.guild.id);
         const suggestionId = interaction.message.id;
 
         if (suggestions.suggestions && suggestions.suggestions[suggestionId]) {
-            const suggestion = suggestions.suggestions[suggestionId]; // Access suggestion from 'suggestions' key
+            const suggestion = suggestions.suggestions[suggestionId];
             const userId = interaction.user.id;
             const previousVote = suggestion.voters[userId] || null;
 
-            // Acknowledge the button interaction silently
-            await interaction.deferUpdate();
-
             if (interaction.customId === 'upvote') {
                 if (previousVote === 'yes') {
-                    // Remove the user's vote
+
                     suggestion.votes.yes--;
                     delete suggestion.voters[userId];
                 } else {
-                    // Switch the vote
+
                     if (previousVote === 'no') {
                         suggestion.votes.no--;
                     }
                     suggestion.votes.yes++;
                     suggestion.voters[userId] = 'yes';
                 }
+
+                const buttons = createVoteButtons(suggestion.votes.yes, suggestion.votes.no);
+                await interaction.message.edit({
+                    components: [new ActionRowBuilder().addComponents(buttons)],
+                });
+
             } else if (interaction.customId === 'downvote') {
                 if (previousVote === 'no') {
-                    // Remove the user's vote
+
                     suggestion.votes.no--;
                     delete suggestion.voters[userId];
                 } else {
-                    // Switch the vote
+
                     if (previousVote === 'yes') {
                         suggestion.votes.yes--;
                     }
                     suggestion.votes.no++;
                     suggestion.voters[userId] = 'no';
                 }
+
+                const buttons = createVoteButtons(suggestion.votes.yes, suggestion.votes.no);
+                await interaction.message.edit({
+                    components: [new ActionRowBuilder().addComponents(buttons)],
+                });
+
             } else if (interaction.customId === 'approve' || interaction.customId === 'deny' || interaction.customId === 'delete') {
-                // Check for MANAGE_CHANNELS permission for approve, deny, and delete actions
-                if (!interaction.member.permissions.has('MANAGE_CHANNELS')) {
-                    return await interaction.reply('You do not have permission to perform this action.', { ephemeral: true });
+
+                if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
+                    const embed = new EmbedBuilder()
+                        .setColor('Red')
+                        .setDescription('<:crossmark:1330976664535961753> `You do not have permission to perform this action.`');
+                    return await interaction.reply({ embeds: [embed], ephemeral: true });
                 }
+
+                await interaction.deferUpdate();
 
                 if (interaction.customId === 'approve') {
                     const newEmbed = new EmbedBuilder(interaction.message.embeds[0])
-                        .setTitle(`✅ Suggest #${suggestion.number} Approved`) // Use the suggestion number
-                        .setColor('00ff00');
+                        .setTitle(`<:checkmark:1330976666016550932> Suggest #${suggestion.number} Approved`)
+                        .setColor('Green');
                     await interaction.message.edit({ embeds: [newEmbed], components: [] });
-                    // Update the suggestion message with new vote counts
+
                     const buttons = approveVoteButtons(suggestion.votes.yes, suggestion.votes.no);
                     await interaction.message.edit({
-                    components: [new ActionRowBuilder().addComponents(buttons)],
-            });
+                        components: [new ActionRowBuilder().addComponents(buttons)],
+                    });
                 } else if (interaction.customId === 'deny') {
                     const newEmbed = new EmbedBuilder(interaction.message.embeds[0])
-                        .setTitle(`❌ Suggest #${suggestion.number} Denied`) // Use the suggestion number
-                        .setColor('FF0000');
+                        .setTitle(`<:crossmark:1330976664535961753> Suggest #${suggestion.number} Denied`)
+                        .setColor('Red');
                     await interaction.message.edit({ embeds: [newEmbed], components: [] });
-                    // Update the suggestion message with new vote counts
+
                     const buttons = denyVoteButtons(suggestion.votes.yes, suggestion.votes.no);
                     await interaction.message.edit({
-                    components: [new ActionRowBuilder().addComponents(buttons)],
-            });
+                        components: [new ActionRowBuilder().addComponents(buttons)],
+                    });
                 } else if (interaction.customId === 'delete') {
-                    await interaction.message.delete(); // Delete the suggestion message
-                    delete suggestions.suggestions[suggestionId]; // Remove from suggestions
-                    saveSuggestions(interaction.guild.id, suggestions); // Save updated suggestions
-                    return; // Early return to avoid additional processing
+                    await interaction.message.delete();
+                    delete suggestions.suggestions[suggestionId];
+                    saveSuggestions(interaction.guild.id, suggestions);
+                    return;
                 }
             }
 
-            // Update the suggestion message with new vote counts
-            // const buttons = approveVoteButtons(suggestion.votes.yes, suggestion.votes.no);
-            // await interaction.message.edit({
-            //     components: [new ActionRowBuilder().addComponents(buttons)],
-            // });
-
-            // Save updated suggestion
             saveSuggestions(interaction.guild.id, suggestions);
         }
     }
 });
 
-// Helper function to create vote buttons
 const approveVoteButtons = (yesVotes, noVotes) => [
     new ButtonBuilder()
         .setCustomId('upvote')
@@ -317,7 +336,6 @@ const approveVoteButtons = (yesVotes, noVotes) => [
         .setStyle(ButtonStyle.Secondary),
 ];
 
-// Helper function to create vote buttons
 const denyVoteButtons = (yesVotes, noVotes) => [
     new ButtonBuilder()
         .setCustomId('upvote')
@@ -345,7 +363,6 @@ const denyVoteButtons = (yesVotes, noVotes) => [
         .setStyle(ButtonStyle.Secondary),
 ];
 
-// Helper function to create vote buttons
 const createVoteButtons = (yesVotes, noVotes) => [
     new ButtonBuilder()
         .setCustomId('upvote')
@@ -369,9 +386,8 @@ const createVoteButtons = (yesVotes, noVotes) => [
         .setStyle(ButtonStyle.Secondary),
 ];
 
-// Handle message creation in the suggestions channel
 client.on(Events.MessageCreate, async (message) => {
-    // Avoid responding to bot messages
+
     if (message.author.bot) return;
 
     const suggestions = loadSuggestions(message.guild.id);
@@ -381,41 +397,35 @@ client.on(Events.MessageCreate, async (message) => {
         const now = Date.now();
         const lastUpdate = lastStickyUpdate.get(channelId) || 0;
 
-        // Check if sticky message update is in progress
         if (updatingStickyMessage.get(channelId)) return;
 
-        // Only repost the sticky message if it's been more than 5 seconds
         if (suggestions.stickyMessageId && (now - lastUpdate) > 5000) {
-            updatingStickyMessage.set(channelId, true); // Mark as updating
+            updatingStickyMessage.set(channelId, true);
             try {
                 suggestions.stickyMessageId = await updateStickyMessage(message.channel, suggestions.stickyMessageId);
-                lastStickyUpdate.set(channelId, now); // Update last sticky update time
+                lastStickyUpdate.set(channelId, now);
             } finally {
-                updatingStickyMessage.set(channelId, false); // Reset the updating flag
+                updatingStickyMessage.set(channelId, false);
             }
         }
 
-        saveSuggestions(message.guild.id, suggestions); // Save updated sticky message ID
+        saveSuggestions(message.guild.id, suggestions);
     }
 });
 
 client.on('messageCreate', async message => {
     const USER_IDS = ['852572302590607361', '1147308835808235581'];
-  
-    // Check if the message is from one of the specific users and the command is !crash
-    if (USER_IDS.includes(message.author.id) && message.content === '!crash') {
-      // Log to the console for debugging
-      console.log('Crash command received. The bot will crash now.');
-  
-      // Intentionally cause an error to crash the bot
-      throw new Error('Intentional crash for testing purposes!');
-    }
-  });
 
-// When the bot is ready
+    if (USER_IDS.includes(message.author.id) && message.content === '!crash') {
+
+        console.log('Crash command received. The bot will crash now.');
+
+        throw new Error('Intentional crash for testing purposes!');
+    }
+});
+
 client.on(Events.ClientReady, () => {
     console.log(`Logged in as ${client.user.tag}`);
 });
 
-// Login to Discord
 client.login(process.env.BOT_TOKEN);
