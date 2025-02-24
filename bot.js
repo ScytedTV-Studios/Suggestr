@@ -55,11 +55,11 @@ const commands = [
                 name: 'disable',
                 description: 'Disable the suggestions channel',
             },
-            {
-                type: 1,
-                name: 'data',
-                description: 'See how your data is used and stored',
-            },
+            // {
+            //     type: 1,
+            //     name: 'data',
+            //     description: 'See how your data is used and stored',
+            // },
         ],
     },
     {
@@ -228,6 +228,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const previousVote = suggestion.voters[userId] || null;
 
             if (interaction.customId === 'upvote') {
+
+                await interaction.deferUpdate();
+
                 if (previousVote === 'yes') {
 
                     suggestion.votes.yes--;
@@ -247,6 +250,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 });
 
             } else if (interaction.customId === 'downvote') {
+
+                await interaction.deferUpdate();
+                
                 if (previousVote === 'no') {
 
                     suggestion.votes.no--;
