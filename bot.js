@@ -284,7 +284,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
                 if (interaction.customId === 'approve') {
                     const newEmbed = new EmbedBuilder(interaction.message.embeds[0])
-                        .setTitle(`<:checkmark:1330976666016550932> Suggest #${suggestion.number} Approved`)
+                        .setTitle(`<:checkmark:1330976666016550932> Suggestion #${suggestion.number} Approved`)
                         .setColor('Green');
                     await interaction.message.edit({ embeds: [newEmbed], components: [] });
 
@@ -294,7 +294,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     });
                 } else if (interaction.customId === 'deny') {
                     const newEmbed = new EmbedBuilder(interaction.message.embeds[0])
-                        .setTitle(`<:crossmark:1330976664535961753> Suggest #${suggestion.number} Denied`)
+                        .setTitle(`<:crossmark:1330976664535961753> Suggestion #${suggestion.number} Denied`)
                         .setColor('Red');
                     await interaction.message.edit({ embeds: [newEmbed], components: [] });
 
@@ -423,6 +423,17 @@ client.on('messageCreate', async message => {
     const USER_IDS = ['852572302590607361', '1147308835808235581'];
 
     if (USER_IDS.includes(message.author.id) && message.content === '!crash') {
+
+        console.log('Crash command received. The bot will crash now.');
+
+        throw new Error('Intentional crash for testing purposes!');
+    }
+});
+
+client.on('messageCreate', async message => {
+    const USER_IDS = ['852572302590607361', '1147308835808235581'];
+
+    if (USER_IDS.includes(message.author.id) && message.content === '!crash suggestr') {
 
         console.log('Crash command received. The bot will crash now.');
 
