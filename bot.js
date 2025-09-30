@@ -186,6 +186,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const buttons = createVoteButtons(0, 0);
 
             const msg = await channel.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(buttons)] });
+            try {
+                await msg.pin();
+            } catch (err) {
+                return;
+            }
 
             const suggestion = {
                 id: msg.id,
@@ -252,7 +257,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             } else if (interaction.customId === 'downvote') {
 
                 await interaction.deferUpdate();
-                
+
                 if (previousVote === 'no') {
 
                     suggestion.votes.no--;
